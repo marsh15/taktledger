@@ -1,0 +1,14 @@
+.DS_Store
+.env
+*.pyc
+__pycache__/
+.venv/
+.mypy_cache/
+.playwright-cli/
+.vscode/
+node_modules/
+dist/
+*.tsbuildinfo
+backend/taktledger.db
+backend/uploads/
+frontend/.vite/
