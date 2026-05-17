@@ -160,8 +160,6 @@ Demo Video: add video link after recording.
 - `AI_WORKFLOW.md`: AI-assisted development workflow
 - `AGENTS.md`: concise product and demo workflow notes
 - `ARCHITECTURE.md`: system architecture overview
-- `ASSUMPTIONS.md`: prototype assumptions and tradeoffs
-- `DEMO_NOTES.md`: suggested demo video flow and speaking notes
 
 ## Future Improvements
 
