@@ -73,7 +73,7 @@ The frontend owns the product workflow screens: dashboard, upload, review, histo
 ## Validation Rules
 
 - Missing date is an error
-- Date values are normalized to `YYYY-MM-DD`; missing year defaults to `2026`
+- Date values are normalized to `YYYY-MM-DD`; missing year defaults to the current year
 - Invalid shift values are errors
 - Missing employee number is an error
 - Employee number should match `BT####`
@@ -149,7 +149,7 @@ Do not commit real API keys.
 
 ## Demo Links
 
-GitHub: add repository link before submission.
+GitHub: https://github.com/marsh15/taktledger
 
 Hosted URL: add hosted demo URL after deployment.
 
