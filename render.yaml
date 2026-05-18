@@ -18,7 +18,9 @@ services:
       - key: GEMINI_API_KEY
         sync: false
       - key: GEMINI_TIMEOUT_MS
-        value: 15000
+        value: 45000
+      - key: GEMINI_MAX_ATTEMPTS
+        value: 2
       - key: DATABASE_URL
         value: sqlite:///./taktledger.db
       - key: UPLOAD_DIR

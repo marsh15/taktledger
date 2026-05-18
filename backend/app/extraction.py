@@ -1,5 +1,6 @@
 import json
 import os
+import time
 from pathlib import Path
 from typing import Any
 
@@ -7,17 +8,78 @@ from typing import Any
 EXTRACTION_PROMPT = """
 You are an AI document extraction engine for manufacturing machine shop records.
 
-Extract handwritten table data from the uploaded document image.
-The document is titled "Machine shop data" and contains rows with these columns:
-S. No, Date, Shift, Emp. No, Opn Code, Machine No., Work Order No., Qty. Prod.,
-Time taken in hrs.
+Extract handwritten table data from the uploaded document image. The document is
+titled "Machine shop data" and contains rows with these columns:
+S. No, Date, Shift, Emp. No, Opn Code, Machine No., Work Order No.,
+Qty. Prod., Time taken in hrs.
 
 Return only valid JSON. Do not include markdown.
-For each field, return value, confidence from 0 to 1, and notes if unclear.
-If a field is blank, crossed out, overwritten, or unreadable, set value to null and confidence below 0.6.
+Use exactly these row keys:
+serial_no, date, shift, employee_no, operation_code, machine_no,
+work_order_no, quantity_produced, time_taken_hours.
 
-Normalize shifts 1/2/3 to I/II/III, dates to YYYY-MM-DD where possible, and numeric fields to numbers.
+For each field, return an object with:
+value, confidence, notes.
+
+Rules:
+- Extract only table rows that contain actual handwritten/printed production data.
+- Do not return empty table rows.
+- Do not invent values. If a cell is unreadable, blank, crossed out, or overwritten, set value to null and explain in notes.
+- Confidence must be a number from 0 to 1.
+- Normalize shifts 1/2/3 to I/II/III.
+- Normalize dates to YYYY-MM-DD when possible. If the year is not visible, keep the visible date and explain in notes.
+- Keep employee, operation, machine, and work order identifiers as strings.
+- Return quantity_produced as an integer when readable, otherwise null.
+- Return time_taken_hours as a number when readable, otherwise null.
+- If you can read only part of a value, return your best reading with low confidence and notes.
 """
+
+CELL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "value": {"type": ["string", "number", "integer", "null"]},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "notes": {"type": "string"},
+    },
+    "required": ["value", "confidence", "notes"],
+}
+
+EXTRACTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "document_type": {"type": "string"},
+        "extraction_notes": {"type": "string"},
+        "rows": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "serial_no": CELL_SCHEMA,
+                    "date": CELL_SCHEMA,
+                    "shift": CELL_SCHEMA,
+                    "employee_no": CELL_SCHEMA,
+                    "operation_code": CELL_SCHEMA,
+                    "machine_no": CELL_SCHEMA,
+                    "work_order_no": CELL_SCHEMA,
+                    "quantity_produced": CELL_SCHEMA,
+                    "time_taken_hours": CELL_SCHEMA,
+                },
+                "required": [
+                    "serial_no",
+                    "date",
+                    "shift",
+                    "employee_no",
+                    "operation_code",
+                    "machine_no",
+                    "work_order_no",
+                    "quantity_produced",
+                    "time_taken_hours",
+                ],
+            },
+        },
+    },
+    "required": ["document_type", "extraction_notes", "rows"],
+}
 
 
 def field(value: Any, confidence: float, notes: str = "") -> dict[str, Any]:
@@ -132,6 +194,24 @@ def _mime_type(file_path: Path, file_type: str) -> str:
     return "image/png"
 
 
+def is_fallback_result(data: dict[str, Any]) -> bool:
+    return str(data.get("extraction_notes", "")).startswith("Deterministic fallback extraction")
+
+
+def generation_config(types: Any) -> Any:
+    try:
+        return types.GenerateContentConfig(
+            temperature=0,
+            response_mime_type="application/json",
+            response_schema=EXTRACTION_SCHEMA,
+        )
+    except TypeError:
+        return types.GenerateContentConfig(
+            temperature=0,
+            response_mime_type="application/json",
+        )
+
+
 def extract_document(file_path: str, file_type: str) -> dict[str, Any]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -143,21 +223,32 @@ def extract_document(file_path: str, file_type: str) -> dict[str, Any]:
 
         path = Path(file_path)
         timeout_ms = int(os.getenv("GEMINI_TIMEOUT_MS", "15000"))
+        max_attempts = max(1, int(os.getenv("GEMINI_MAX_ATTEMPTS", "2")))
         http_options = types.HttpOptions(timeout=timeout_ms)
         client = genai.Client(api_key=api_key, http_options=http_options)
-        response = client.models.generate_content(
-            model=os.getenv("GEMINI_MODEL", "gemini-2.5-flash"),
-            contents=[
-                EXTRACTION_PROMPT,
-                types.Part.from_bytes(data=path.read_bytes(), mime_type=_mime_type(path, file_type)),
-            ],
-            config=types.GenerateContentConfig(
-                temperature=0,
-                response_mime_type="application/json",
-            ),
-        )
-        text = (response.text or "").strip()
-        return normalize_extraction_result(parse_json_response(text))
+        image_part = types.Part.from_bytes(data=path.read_bytes(), mime_type=_mime_type(path, file_type))
+        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        last_error = ""
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                response = client.models.generate_content(
+                    model=model,
+                    contents=[EXTRACTION_PROMPT, image_part],
+                    config=generation_config(types),
+                )
+                text = (response.text or "").strip()
+                result = normalize_extraction_result(parse_json_response(text))
+                if not is_fallback_result(result):
+                    return result
+                last_error = result.get("extraction_notes", "")
+            except Exception as exc:
+                last_error = str(exc)
+
+            if attempt < max_attempts:
+                time.sleep(attempt)
+
+        return safe_fallback(f"Live extraction failed after {max_attempts} attempt(s): {last_error}")
     except Exception as exc:
         return safe_fallback(f"Live extraction failed: {exc}")
 

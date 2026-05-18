@@ -143,6 +143,16 @@ cd ../frontend && npm ci && npm run build && cd ../backend && pip install -r req
 
 Set `GEMINI_API_KEY` in Render's environment variables. Do not put real API keys in the repository.
 
+For live Gemini extraction, use:
+
+```text
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_MS=45000
+GEMINI_MAX_ATTEMPTS=2
+```
+
+The extraction layer requests structured JSON from Gemini, retries transient failures, and falls back only when live extraction times out or returns no usable row data.
+
 ## Vercel Frontend Deployment
 
 If you deploy the React frontend separately on Vercel, set the Vercel project root directory to `frontend`.
