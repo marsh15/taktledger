@@ -72,6 +72,27 @@ def safe_fallback(note: str) -> dict[str, Any]:
     return data
 
 
+def cell_value(row: dict[str, Any], key: str) -> Any:
+    cell = row.get(key)
+    if isinstance(cell, dict):
+        return cell.get("value")
+    return cell
+
+
+def has_meaningful_values(row: dict[str, Any]) -> bool:
+    data_fields = [
+        "date",
+        "shift",
+        "employee_no",
+        "operation_code",
+        "machine_no",
+        "work_order_no",
+        "quantity_produced",
+        "time_taken_hours",
+    ]
+    return any(cell_value(row, key) not in {None, "", "-"} for key in data_fields)
+
+
 def normalize_extraction_result(data: Any) -> dict[str, Any]:
     if isinstance(data, list):
         data = {
@@ -93,8 +114,13 @@ def normalize_extraction_result(data: Any) -> dict[str, Any]:
     if not all(isinstance(row, dict) for row in rows):
         return safe_fallback("AI extraction rows were not valid objects, so fallback rows were used.")
 
+    meaningful_rows = [row for row in rows if has_meaningful_values(row)]
+    if not meaningful_rows:
+        return safe_fallback("AI extraction returned only blank rows, so fallback rows were used.")
+
     data.setdefault("document_type", "machine_shop_data")
     data.setdefault("extraction_notes", "Live Gemini extraction completed.")
+    data["rows"] = meaningful_rows
     return data
 
 
