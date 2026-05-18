@@ -28,16 +28,16 @@ Rules:
 - Confidence must be a number from 0 to 1.
 - Normalize shifts 1/2/3 to I/II/III.
 - Normalize dates to YYYY-MM-DD when possible. If the year is not visible, keep the visible date and explain in notes.
+- Return every value as a string when readable, otherwise null.
 - Keep employee, operation, machine, and work order identifiers as strings.
-- Return quantity_produced as an integer when readable, otherwise null.
-- Return time_taken_hours as a number when readable, otherwise null.
+- Return quantity_produced and time_taken_hours as string values when readable, otherwise null.
 - If you can read only part of a value, return your best reading with low confidence and notes.
 """
 
 CELL_SCHEMA = {
     "type": "object",
     "properties": {
-        "value": {"type": ["string", "number", "integer", "null"]},
+        "value": {"type": "string", "nullable": True},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "notes": {"type": "string"},
     },
@@ -80,6 +80,18 @@ EXTRACTION_SCHEMA = {
     },
     "required": ["document_type", "extraction_notes", "rows"],
 }
+
+ROW_FIELD_KEYS = [
+    "serial_no",
+    "date",
+    "shift",
+    "employee_no",
+    "operation_code",
+    "machine_no",
+    "work_order_no",
+    "quantity_produced",
+    "time_taken_hours",
+]
 
 
 def field(value: Any, confidence: float, notes: str = "") -> dict[str, Any]:
@@ -141,17 +153,38 @@ def cell_value(row: dict[str, Any], key: str) -> Any:
     return cell
 
 
+def normalize_cell(cell: Any) -> dict[str, Any]:
+    if isinstance(cell, dict):
+        value = cell.get("value")
+        confidence = cell.get("confidence", 0.5)
+        notes = cell.get("notes") or ""
+    else:
+        value = cell
+        confidence = 0.5 if value not in {None, "", "-"} else 0.2
+        notes = "Gemini returned this field without confidence metadata."
+
+    try:
+        confidence = float(confidence)
+    except (TypeError, ValueError):
+        confidence = 0.5
+
+    return {
+        "value": value,
+        "confidence": min(max(confidence, 0), 1),
+        "notes": str(notes),
+    }
+
+
+def normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = {key: normalize_cell(row.get(key)) for key in ROW_FIELD_KEYS}
+    extra_keys = set(row) - set(ROW_FIELD_KEYS)
+    for key in extra_keys:
+        normalized[key] = row[key]
+    return normalized
+
+
 def has_meaningful_values(row: dict[str, Any]) -> bool:
-    data_fields = [
-        "date",
-        "shift",
-        "employee_no",
-        "operation_code",
-        "machine_no",
-        "work_order_no",
-        "quantity_produced",
-        "time_taken_hours",
-    ]
+    data_fields = ROW_FIELD_KEYS[1:]
     return any(cell_value(row, key) not in {None, "", "-"} for key in data_fields)
 
 
@@ -176,7 +209,8 @@ def normalize_extraction_result(data: Any) -> dict[str, Any]:
     if not all(isinstance(row, dict) for row in rows):
         return safe_fallback("AI extraction rows were not valid objects, so fallback rows were used.")
 
-    meaningful_rows = [row for row in rows if has_meaningful_values(row)]
+    normalized_rows = [normalize_row(row) for row in rows]
+    meaningful_rows = [row for row in normalized_rows if has_meaningful_values(row)]
     if not meaningful_rows:
         return safe_fallback("AI extraction returned only blank rows, so fallback rows were used.")
 
