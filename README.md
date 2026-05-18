@@ -121,6 +121,40 @@ cd frontend
 npm run build
 ```
 
+## Render Deployment
+
+The backend can serve the compiled React app from the same Render Web Service. Use the included `render.yaml` blueprint, or configure an existing Render service with these settings:
+
+```bash
+# Build command, from the repo root
+cd frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
+```
+
+```bash
+# Start command, from the repo root
+cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+```
+
+If your Render service has `Root Directory` set to `backend`, use this build command instead:
+
+```bash
+cd ../frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
+```
+
+Set `GEMINI_API_KEY` in Render's environment variables. Do not put real API keys in the repository.
+
+## Vercel Frontend Deployment
+
+If you deploy the React frontend separately on Vercel, set the Vercel project root directory to `frontend`.
+
+Set this Vercel environment variable:
+
+```text
+VITE_API_URL=https://taktledger.onrender.com
+```
+
+Then redeploy the Vercel project. The backend allows `*.vercel.app` origins by default. For a custom frontend domain, set `CORS_ORIGIN_REGEX` on Render to include that domain.
+
 ## Environment Variables
 
 Copy `.env.example` to `.env` and fill only the keys you need.

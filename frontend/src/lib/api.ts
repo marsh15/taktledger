@@ -1,6 +1,6 @@
 import type { AnalyticsSummary, ProductionRecord, RecordPatch, Upload, UploadWithRecords } from "../types/api";
 
-export const API_BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+export const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${path}`, options);

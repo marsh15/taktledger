@@ -1,9 +1,11 @@
+import os
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
@@ -24,6 +26,11 @@ from .validation import apply_validation, upload_issue_counts
 
 UPLOAD_DIR = BASE_DIR / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+FRONTEND_DIST_DIR = BASE_DIR.parent / "frontend" / "dist"
+CORS_ORIGIN_REGEX = os.getenv(
+    "CORS_ORIGIN_REGEX",
+    r"^(http://(localhost|127\.0\.0\.1):\d+|https://[a-zA-Z0-9-]+\.vercel\.app)$",
+)
 
 Base.metadata.create_all(bind=engine)
 
@@ -31,7 +38,7 @@ app = FastAPI(title="TaktLedger API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
+    allow_origin_regex=CORS_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -384,3 +391,23 @@ def analytics_summary(db: Session = Depends(get_db)):
         issue_summary=[{"issue_code": code, "severity": severity, "count": count} for code, severity, count in issues],
         status_summary=[{"status": status, "count": count} for status, count in statuses],
     )
+
+
+if FRONTEND_DIST_DIR.exists():
+    frontend_assets_dir = FRONTEND_DIST_DIR / "assets"
+    if frontend_assets_dir.exists():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=frontend_assets_dir),
+            name="frontend-assets",
+        )
+
+    @app.get("/", include_in_schema=False)
+    @app.get("/{path:path}", include_in_schema=False)
+    def serve_frontend(path: str = ""):
+        if path.startswith(("api/", "uploads/")):
+            raise HTTPException(status_code=404, detail="Not Found")
+        requested_path = FRONTEND_DIST_DIR / path
+        if path and requested_path.is_file():
+            return FileResponse(requested_path)
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
