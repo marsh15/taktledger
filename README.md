@@ -199,7 +199,7 @@ Do not commit real API keys.
 
 GitHub: https://github.com/marsh15/taktledger
 
-Hosted URL: add hosted demo URL after deployment.
+Hosted URL: https://taktledger.vercel.app
 
 Demo Video: add video link after recording.
 
