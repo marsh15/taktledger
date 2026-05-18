@@ -1,3 +1,4 @@
+import base64
 import json
 import os
 import time
@@ -37,7 +38,7 @@ Rules:
 CELL_SCHEMA = {
     "type": "object",
     "properties": {
-        "value": {"type": "string", "nullable": True},
+        "value": {"type": ["string", "null"]},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "notes": {"type": "string"},
     },
@@ -101,7 +102,7 @@ def field(value: Any, confidence: float, notes: str = "") -> dict[str, Any]:
 def fallback_extraction() -> dict[str, Any]:
     return {
         "document_type": "machine_shop_data",
-        "extraction_notes": "Deterministic fallback extraction used because no live Gemini extraction was available.",
+        "extraction_notes": "Deterministic fallback extraction used because no live OpenAI extraction was available.",
         "rows": [
             {
                 "serial_no": field(1, 0.98),
@@ -161,7 +162,7 @@ def normalize_cell(cell: Any) -> dict[str, Any]:
     else:
         value = cell
         confidence = 0.5 if value not in {None, "", "-"} else 0.2
-        notes = "Gemini returned this field without confidence metadata."
+        notes = "OpenAI returned this field without confidence metadata."
 
     try:
         confidence = float(confidence)
@@ -192,7 +193,7 @@ def normalize_extraction_result(data: Any) -> dict[str, Any]:
     if isinstance(data, list):
         data = {
             "document_type": "machine_shop_data",
-            "extraction_notes": "Live Gemini extraction returned a row list; it was normalized.",
+            "extraction_notes": "Live OpenAI extraction returned a row list; it was normalized.",
             "rows": data,
         }
 
@@ -215,7 +216,7 @@ def normalize_extraction_result(data: Any) -> dict[str, Any]:
         return safe_fallback("AI extraction returned only blank rows, so fallback rows were used.")
 
     data.setdefault("document_type", "machine_shop_data")
-    data.setdefault("extraction_notes", "Live Gemini extraction completed.")
+    data.setdefault("extraction_notes", "Live OpenAI extraction completed.")
     data["rows"] = meaningful_rows
     return data
 
@@ -232,52 +233,99 @@ def is_fallback_result(data: dict[str, Any]) -> bool:
     return str(data.get("extraction_notes", "")).startswith("Deterministic fallback extraction")
 
 
-def generation_config(types: Any) -> Any:
-    try:
-        return types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json",
-            response_schema=EXTRACTION_SCHEMA,
+def live_extraction_required() -> bool:
+    return os.getenv("OPENAI_REQUIRE_LIVE", "").lower() in {"1", "true", "yes", "on"}
+
+
+def response_text_format() -> dict[str, Any]:
+    return {
+        "format": {
+            "type": "json_schema",
+            "name": "machine_shop_extraction",
+            "schema": EXTRACTION_SCHEMA,
+            "strict": False,
+        }
+    }
+
+
+def file_input_part(path: Path, file_type: str) -> dict[str, Any]:
+    data_url = f"data:{_mime_type(path, file_type)};base64,{base64.b64encode(path.read_bytes()).decode('utf-8')}"
+    if file_type == "pdf":
+        return {
+            "type": "input_file",
+            "filename": path.name or "document.pdf",
+            "file_data": data_url,
+        }
+    return {
+        "type": "input_image",
+        "image_url": data_url,
+        "detail": "high",
+    }
+
+
+def error_message(exc: Exception, model: str) -> str:
+    message = str(exc)
+    if "insufficient_quota" in message or "quota" in message.lower() or "rate limit" in message.lower():
+        return (
+            f"OpenAI quota or rate limit was exhausted for model {model}. "
+            "Check OPENAI_API_KEY billing, usage limits, or try again after the rate limit resets."
         )
-    except TypeError:
-        return types.GenerateContentConfig(
-            temperature=0,
-            response_mime_type="application/json",
-        )
+    if "timed out" in message.lower() or "timeout" in message.lower():
+        return "OpenAI extraction timed out. Increase OPENAI_TIMEOUT_MS or try a smaller, clearer image."
+    if "api key" in message.lower() or "authentication" in message.lower() or "unauthorized" in message.lower():
+        return "OpenAI authentication failed. Check OPENAI_API_KEY in the backend environment."
+    return message.split("\n", 1)[0]
+
+
+def should_retry(exc: Exception) -> bool:
+    message = str(exc)
+    if "insufficient_quota" in message or "quota" in message.lower():
+        return False
+    if "api key" in message.lower() or "authentication" in message.lower() or "unauthorized" in message.lower():
+        return False
+    return True
 
 
 def extract_document(file_path: str, file_type: str) -> dict[str, Any]:
-    api_key = os.getenv("GEMINI_API_KEY")
+    api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         return fallback_extraction()
 
     try:
-        import google.genai as genai
-        from google.genai import types
+        from openai import OpenAI
 
         path = Path(file_path)
-        timeout_ms = int(os.getenv("GEMINI_TIMEOUT_MS", "15000"))
-        max_attempts = max(1, int(os.getenv("GEMINI_MAX_ATTEMPTS", "2")))
-        http_options = types.HttpOptions(timeout=timeout_ms)
-        client = genai.Client(api_key=api_key, http_options=http_options)
-        image_part = types.Part.from_bytes(data=path.read_bytes(), mime_type=_mime_type(path, file_type))
-        model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        timeout_ms = int(os.getenv("OPENAI_TIMEOUT_MS", "45000"))
+        max_attempts = max(1, int(os.getenv("OPENAI_MAX_ATTEMPTS", "2")))
+        client = OpenAI(api_key=api_key, timeout=timeout_ms / 1000)
+        input_part = file_input_part(path, file_type)
+        model = os.getenv("OPENAI_MODEL", "gpt-4.1")
         last_error = ""
 
         for attempt in range(1, max_attempts + 1):
             try:
-                response = client.models.generate_content(
+                response = client.responses.create(
                     model=model,
-                    contents=[EXTRACTION_PROMPT, image_part],
-                    config=generation_config(types),
+                    input=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "input_text", "text": EXTRACTION_PROMPT},
+                                input_part,
+                            ],
+                        }
+                    ],
+                    text=response_text_format(),
                 )
-                text = (response.text or "").strip()
+                text = (response.output_text or "").strip()
                 result = normalize_extraction_result(parse_json_response(text))
                 if not is_fallback_result(result):
                     return result
                 last_error = result.get("extraction_notes", "")
             except Exception as exc:
-                last_error = str(exc)
+                last_error = error_message(exc, model)
+                if not should_retry(exc):
+                    return safe_fallback(f"Live extraction failed: {last_error}")
 
             if attempt < max_attempts:
                 time.sleep(attempt)
@@ -289,7 +337,7 @@ def extract_document(file_path: str, file_type: str) -> dict[str, Any]:
 
 def parse_json_response(text: str) -> Any:
     if not text:
-        raise ValueError("Gemini returned an empty extraction response.")
+        raise ValueError("OpenAI returned an empty extraction response.")
 
     if text.startswith("```"):
         lines = text.splitlines()

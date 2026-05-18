@@ -10,7 +10,7 @@ Upload handwritten sheet -> Extract table data -> Review/edit fields -> Validate
 
 ## AI Extraction Behavior
 
-- Primary path: Gemini vision extraction when `GEMINI_API_KEY` is configured.
+- Primary path: OpenAI vision extraction when `OPENAI_API_KEY` is configured.
 - Demo-safe path: deterministic fallback extraction when live AI is unavailable or times out.
 - Each extracted field carries a value, confidence score, and optional notes.
 - Low-confidence, crossed-out, blank, duplicate, or format-mismatched fields remain editable for human review.

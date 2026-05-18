@@ -53,7 +53,7 @@ Each production record stores extracted field values, field confidence scores, f
 
 ## AI Extraction Layer
 
-The extraction layer uses Gemini vision when `GEMINI_API_KEY` is available. It asks the model to return strict JSON with:
+The extraction layer uses OpenAI vision when `OPENAI_API_KEY` is available. It asks the model to return strict JSON with:
 
 - `value`
 - `confidence`

@@ -11,7 +11,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session, selectinload
 
 from .database import BASE_DIR, Base, engine, get_db
-from .extraction import extract_document, fallback_extraction
+from .extraction import extract_document, fallback_extraction, is_fallback_result, live_extraction_required
 from .models import ProductionRecord, Upload, ValidationIssue
 from .schemas import (
     AnalyticsSummary,
@@ -198,6 +198,14 @@ def process_upload(upload_id: str, db: Session = Depends(get_db)) -> dict[str, A
     extraction = ensure_rows(extract_document(upload.stored_path, upload.file_type))
     upload.raw_extraction_json = extraction
     upload.extraction_notes = extraction.get("extraction_notes")
+
+    if live_extraction_required() and is_fallback_result(extraction):
+        upload.processing_status = "failed"
+        db.commit()
+        raise HTTPException(
+            status_code=502,
+            detail=upload.extraction_notes or "Live OpenAI extraction failed.",
+        )
 
     for index, row in enumerate(extraction_rows(extraction), start=1):
         record = ProductionRecord(

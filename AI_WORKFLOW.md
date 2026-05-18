@@ -4,7 +4,7 @@
 
 - ChatGPT/Codex for product planning, implementation, debugging, and documentation
 - Cursor-style AI-assisted development workflow for breaking work into small implementation passes
-- Gemini vision model for optional live document extraction
+- OpenAI vision model for optional live document extraction
 - Deterministic fallback extraction for repeatable local demos
 
 ## How AI Tools Were Used

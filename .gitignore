@@ -10,5 +10,6 @@ node_modules/
 dist/
 *.tsbuildinfo
 backend/taktledger.db
+taktledger.db
 backend/uploads/
 frontend/.vite/

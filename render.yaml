@@ -13,14 +13,16 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.12.11
-      - key: GEMINI_MODEL
-        value: gemini-2.5-flash
-      - key: GEMINI_API_KEY
+      - key: OPENAI_MODEL
+        value: gpt-4.1
+      - key: OPENAI_API_KEY
         sync: false
-      - key: GEMINI_TIMEOUT_MS
+      - key: OPENAI_TIMEOUT_MS
         value: 45000
-      - key: GEMINI_MAX_ATTEMPTS
+      - key: OPENAI_MAX_ATTEMPTS
         value: 2
+      - key: OPENAI_REQUIRE_LIVE
+        value: true
       - key: DATABASE_URL
         value: sqlite:///./taktledger.db
       - key: UPLOAD_DIR

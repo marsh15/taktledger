@@ -34,7 +34,7 @@ Backend: FastAPI, Pydantic, SQLAlchemy
 
 Database: SQLite
 
-AI/OCR: Gemini vision extraction with deterministic fallback extraction for reliable demos
+AI/OCR: OpenAI vision extraction with deterministic fallback extraction for reliable demos
 
 Deployment: Local-first prototype; frontend can be deployed to Vercel/Netlify and backend to Render/Fly/Railway with environment variables configured
 
@@ -62,7 +62,7 @@ Upload -> Extract -> Review -> Validate -> Save -> Analyze
 ```text
 React UI
   -> FastAPI upload/process/review APIs
-  -> AI extraction layer: Gemini vision or fallback rows
+  -> AI extraction layer: OpenAI vision or fallback rows
   -> Validation layer: normalization, business rules, warnings, errors
   -> SQLite database: uploads, production records, validation issues
   -> Dashboard/history/search APIs
@@ -141,17 +141,19 @@ If your Render service has `Root Directory` set to `backend`, use this build com
 cd ../frontend && npm ci && npm run build && cd ../backend && pip install -r requirements.txt
 ```
 
-Set `GEMINI_API_KEY` in Render's environment variables. Do not put real API keys in the repository.
+Set `OPENAI_API_KEY` in Render's environment variables. Do not put real API keys in the repository.
 
-For live Gemini extraction, use:
+For live OpenAI extraction, use:
 
 ```text
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_TIMEOUT_MS=45000
-GEMINI_MAX_ATTEMPTS=2
+OPENAI_MODEL=gpt-4.1
+OPENAI_TIMEOUT_MS=45000
+OPENAI_MAX_ATTEMPTS=2
+OPENAI_REQUIRE_LIVE=true
 ```
 
-The extraction layer requests structured JSON from Gemini, retries transient failures, and falls back only when live extraction times out or returns no usable row data.
+The extraction layer requests structured JSON from OpenAI, retries transient failures, and falls back only when live extraction times out or returns no usable row data.
+Set `OPENAI_REQUIRE_LIVE=true` when you want `/process` to fail with the OpenAI error instead of using deterministic fallback rows.
 
 ## Vercel Frontend Deployment
 
@@ -170,14 +172,16 @@ Then redeploy the Vercel project. The backend allows `*.vercel.app` origins by d
 Copy `.env.example` to `.env` and fill only the keys you need.
 
 ```text
-GEMINI_API_KEY=
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_TIMEOUT_MS=15000
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-4.1
+OPENAI_TIMEOUT_MS=45000
+OPENAI_MAX_ATTEMPTS=2
+OPENAI_REQUIRE_LIVE=true
 DATABASE_URL=sqlite:///./taktledger.db
 VITE_API_URL=http://localhost:8000
 ```
 
-`GEMINI_API_KEY` is optional for local demos. If it is empty or live extraction fails, TaktLedger uses deterministic fallback extraction so the upload-review-save-analytics workflow remains testable.
+`OPENAI_API_KEY` is optional for local demos. If it is empty or live extraction fails, TaktLedger uses deterministic fallback extraction so the upload-review-save-analytics workflow remains testable.
 
 Do not commit real API keys.
 
@@ -188,7 +192,7 @@ Do not commit real API keys.
 - Same work order across shifts may be valid, so duplicate work orders are warnings instead of hard failures.
 - Quantity can be blank in real handwritten forms, so missing quantity is reviewable rather than always blocking.
 - AI confidence scores are approximate and guide human review.
-- Fallback extraction is included to keep the demo reliable if Gemini is unavailable, slow, or rate-limited.
+- Fallback extraction is included to keep the demo reliable if OpenAI is unavailable, slow, or rate-limited.
 - Authentication, roles, ERP integration, audit trails, and production object storage are intentionally out of scope.
 
 ## Demo Links
