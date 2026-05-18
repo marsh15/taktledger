@@ -201,7 +201,7 @@ GitHub: https://github.com/marsh15/taktledger
 
 Hosted URL: https://taktledger.vercel.app
 
-Demo Video: add video link after recording.
+Demo Video: https://www.loom.com/share/eefe1f11658946c3bc05a1a9a7e319aa
 
 ## Additional Documents
 
